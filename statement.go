@@ -108,5 +108,6 @@ func (stmt *mysqlStmt) Query(args []driver.Value) (driver.Rows, error) {
 		}
 	}
 
+	rows.init()
 	return rows, err
 }

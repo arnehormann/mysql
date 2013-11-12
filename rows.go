@@ -26,6 +26,7 @@ type mysqlRows struct {
 
 type binaryRows struct {
 	mysqlRows
+	storer []storeCol
 }
 
 type textRows struct {
