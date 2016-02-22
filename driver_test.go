@@ -1809,3 +1809,38 @@ func TestUnixSocketAuthFail(t *testing.T) {
 		}
 	})
 }
+
+// select followed by an error
+func TestIssue422(t *testing.T) {
+	const maxTime = 5 * time.Second
+	runTestsWithMultiStatement(t, dsn, func(dbt *DBTest) {
+		done := make(chan struct{})
+		var i int
+		go func() {
+			rows, err := dbt.db.Query("SELECT TRUE; " +
+				"SIGNAL SQLSTATE '45001'" +
+				" SET MESSAGE_TEXT = 'an error'," +
+				" MYSQL_ERRNO = 45001",
+			)
+			if err != nil {
+				dbt.Errorf("err[422] %v", err)
+			}
+			defer rows.Close()
+			val := false
+			for rows.Next() {
+				i++
+				if err := rows.Scan(&val); err != nil {
+					dbt.Error(err)
+				} else if val != true {
+					dbt.Errorf("expected val to be true")
+				}
+			}
+			done <- struct{}{}
+		}()
+		select {
+		case <-time.After(maxTime):
+			dbt.Fatalf("rows.Next() locked in iteration %d", i)
+		case <-done:
+		}
+	})
+}
