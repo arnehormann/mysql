@@ -52,7 +52,12 @@ func (mc *mysqlConn) handleParams() (err error) {
 
 		// System Vars
 		default:
-			err = mc.exec("SET " + param + "=" + val + "")
+			if val[0] == '\'' || val[0] == '"' {
+				err = mc.exec("SET " + param + "=" + val)
+			} else {
+				query := "SET " + param + "='" + string(escapeStringBackslash(nil, val)) + "'"
+				err = mc.exec(query)
+			}
 			if err != nil {
 				return
 			}
