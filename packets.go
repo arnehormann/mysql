@@ -32,7 +32,7 @@ func (mc *mysqlConn) readPacket() ([]byte, error) {
 		if err != nil {
 			errLog.Print(err)
 			mc.Close()
-			return nil, driver.ErrBadConn
+			return nil, ErrInvalidConn
 		}
 
 		// packet length [24 bit]
@@ -54,7 +54,7 @@ func (mc *mysqlConn) readPacket() ([]byte, error) {
 			if prevData == nil {
 				errLog.Print(ErrMalformPkt)
 				mc.Close()
-				return nil, driver.ErrBadConn
+				return nil, ErrInvalidConn
 			}
 
 			return prevData, nil
@@ -65,7 +65,7 @@ func (mc *mysqlConn) readPacket() ([]byte, error) {
 		if err != nil {
 			errLog.Print(err)
 			mc.Close()
-			return nil, driver.ErrBadConn
+			return nil, ErrInvalidConn
 		}
 
 		// return data if this was the last packet
@@ -126,10 +126,14 @@ func (mc *mysqlConn) writePacket(data []byte) error {
 		// Handle error
 		if err == nil { // n != len(data)
 			errLog.Print(ErrMalformPkt)
-		} else {
-			errLog.Print(err)
+			return ErrMalformPkt
 		}
-		return driver.ErrBadConn
+		errLog.Print(err)
+		if n == 0 && pktLen == len(data)-4 {
+			// only for the first loop iteration when nothing was written yet
+			return errBadConnNoWrite
+		}
+		return ErrInvalidConn
 	}
 }
 
@@ -263,7 +267,7 @@ func (mc *mysqlConn) writeAuthPacket(cipher []byte) error {
 	if data == nil {
 		// can not take the buffer. Something must be wrong with the connection
 		errLog.Print(ErrBusyBuffer)
-		return driver.ErrBadConn
+		return ErrInvalidConn
 	}
 
 	// ClientFlags [32 bit]
@@ -349,7 +353,7 @@ func (mc *mysqlConn) writeOldAuthPacket(cipher []byte) error {
 	if data == nil {
 		// can not take the buffer. Something must be wrong with the connection
 		errLog.Print(ErrBusyBuffer)
-		return driver.ErrBadConn
+		return ErrInvalidConn
 	}
 
 	// Add the scrambled password [null terminated string]
@@ -368,7 +372,7 @@ func (mc *mysqlConn) writeClearAuthPacket() error {
 	if data == nil {
 		// can not take the buffer. Something must be wrong with the connection
 		errLog.Print(ErrBusyBuffer)
-		return driver.ErrBadConn
+		return ErrInvalidConn
 	}
 
 	// Add the clear password [null terminated string]
@@ -389,7 +393,7 @@ func (mc *mysqlConn) writeNativeAuthPacket(cipher []byte) error {
 	if data == nil {
 		// can not take the buffer. Something must be wrong with the connection
 		errLog.Print(ErrBusyBuffer)
-		return driver.ErrBadConn
+		return ErrInvalidConn
 	}
 
 	// Add the scramble
@@ -410,7 +414,7 @@ func (mc *mysqlConn) writeCommandPacket(command byte) error {
 	if data == nil {
 		// can not take the buffer. Something must be wrong with the connection
 		errLog.Print(ErrBusyBuffer)
-		return driver.ErrBadConn
+		return ErrInvalidConn
 	}
 
 	// Add command byte
@@ -429,7 +433,7 @@ func (mc *mysqlConn) writeCommandPacketStr(command byte, arg string) error {
 	if data == nil {
 		// can not take the buffer. Something must be wrong with the connection
 		errLog.Print(ErrBusyBuffer)
-		return driver.ErrBadConn
+		return ErrInvalidConn
 	}
 
 	// Add command byte
@@ -450,7 +454,7 @@ func (mc *mysqlConn) writeCommandPacketUint32(command byte, arg uint32) error {
 	if data == nil {
 		// can not take the buffer. Something must be wrong with the connection
 		errLog.Print(ErrBusyBuffer)
-		return driver.ErrBadConn
+		return ErrInvalidConn
 	}
 
 	// Add command byte
@@ -865,6 +869,10 @@ func (stmt *mysqlStmt) writeCommandLongData(paramID int, arg []byte) error {
 			data = data[pktLen-dataOffset:]
 			continue
 		}
+		if err == errBadConnNoWrite && argLen != len(arg) {
+			// must not relay errBadConnNoWrite after first loop iteration, data was sent
+			return ErrInvalidConn
+		}
 		return err
 
 	}
@@ -901,7 +909,7 @@ func (stmt *mysqlStmt) writeExecutePacket(args []driver.Value) error {
 	if data == nil {
 		// can not take the buffer. Something must be wrong with the connection
 		errLog.Print(ErrBusyBuffer)
-		return driver.ErrBadConn
+		return ErrInvalidConn
 	}
 
 	// command [1 byte]

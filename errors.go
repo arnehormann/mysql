@@ -31,6 +31,10 @@ var (
 	ErrPktSyncMul        = errors.New("commands out of sync. Did you run multiple statements at once?")
 	ErrPktTooLarge       = errors.New("packet for query is too large. Try adjusting the 'max_allowed_packet' variable on the server")
 	ErrBusyBuffer        = errors.New("busy buffer")
+
+	// errBadConnNoWrite is used for connection errors where nothing was written yet.
+	// See https://github.com/go-sql-driver/mysql/pull/302
+	errBadConnNoWrite = errors.New("mysql: bad connection, no data written")
 )
 
 var errLog = Logger(log.New(os.Stderr, "[mysql] ", log.Ldate|log.Ltime|log.Lshortfile))

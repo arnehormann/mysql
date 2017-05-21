@@ -70,9 +70,11 @@ func (mc *mysqlConn) Begin() (driver.Tx, error) {
 	}
 	err := mc.exec("START TRANSACTION")
 	if err == nil {
-		return &mysqlTx{mc}, err
+		return &mysqlTx{mc}, nil
 	}
-
+	if err == errBadConnNoWrite {
+		return nil, driver.ErrBadConn
+	}
 	return nil, err
 }
 
@@ -111,28 +113,26 @@ func (mc *mysqlConn) Prepare(query string) (driver.Stmt, error) {
 	// Send command
 	err := mc.writeCommandPacketStr(comStmtPrepare, query)
 	if err != nil {
+		if err == errBadConnNoWrite {
+			return nil, driver.ErrBadConn
+		}
 		return nil, err
 	}
 
 	stmt := &mysqlStmt{
 		mc: mc,
 	}
-
 	// Read Result
 	columnCount, err := stmt.readPrepareResultPacket()
-	if err == nil {
-		if stmt.paramCount > 0 {
-			if err = mc.readUntilEOF(); err != nil {
-				return nil, err
-			}
-		}
-
-		if columnCount > 0 {
-			err = mc.readUntilEOF()
+	if err != nil {
+		return nil, err
+	}
+	if stmt.paramCount > 0 || columnCount > 0 {
+		if err = mc.readUntilEOF(); err != nil {
+			return nil, err
 		}
 	}
-
-	return stmt, err
+	return stmt, nil
 }
 
 func (mc *mysqlConn) interpolateParams(query string, args []driver.Value) (string, error) {
@@ -145,7 +145,7 @@ func (mc *mysqlConn) interpolateParams(query string, args []driver.Value) (strin
 	if buf == nil {
 		// can not take the buffer. Something must be wrong with the connection
 		errLog.Print(ErrBusyBuffer)
-		return "", driver.ErrBadConn
+		return "", errBadConnNoWrite
 	}
 	buf = buf[:0]
 	argPos := 0
@@ -269,6 +269,9 @@ func (mc *mysqlConn) Exec(query string, args []driver.Value) (driver.Result, err
 		// try to interpolate the parameters to save extra roundtrips for preparing and closing a statement
 		prepared, err := mc.interpolateParams(query, args)
 		if err != nil {
+			if err == errBadConnNoWrite {
+				return nil, driver.ErrBadConn
+			}
 			return nil, err
 		}
 		query = prepared
@@ -277,13 +280,16 @@ func (mc *mysqlConn) Exec(query string, args []driver.Value) (driver.Result, err
 	mc.insertId = 0
 
 	err := mc.exec(query)
-	if err == nil {
-		return &mysqlResult{
-			affectedRows: int64(mc.affectedRows),
-			insertId:     int64(mc.insertId),
-		}, err
+	if err != nil {
+		if err == errBadConnNoWrite {
+			return nil, driver.ErrBadConn
+		}
+		return nil, err
 	}
-	return nil, err
+	return &mysqlResult{
+		affectedRows: int64(mc.affectedRows),
+		insertId:     int64(mc.insertId),
+	}, nil
 }
 
 // Internal function to execute commands
@@ -326,34 +332,41 @@ func (mc *mysqlConn) Query(query string, args []driver.Value) (driver.Rows, erro
 		// try client-side prepare to reduce roundtrip
 		prepared, err := mc.interpolateParams(query, args)
 		if err != nil {
+			if err == errBadConnNoWrite {
+				return nil, driver.ErrBadConn
+			}
 			return nil, err
 		}
 		query = prepared
 	}
 	// Send command
 	err := mc.writeCommandPacketStr(comQuery, query)
-	if err == nil {
-		// Read Result
-		var resLen int
-		resLen, err = mc.readResultSetHeaderPacket()
-		if err == nil {
-			rows := new(textRows)
-			rows.mc = mc
-
-			if resLen == 0 {
-				rows.rs.done = true
-
-				switch err := rows.NextResultSet(); err {
-				case nil, io.EOF:
-					return rows, nil
-				default:
-					return nil, err
-				}
-			}
-			// Columns
-			rows.rs.columns, err = mc.readColumns(resLen)
-			return rows, err
+	if err != nil {
+		if err == errBadConnNoWrite {
+			return nil, driver.ErrBadConn
 		}
+		return nil, err
+	}
+	// Read Result
+	var resLen int
+	resLen, err = mc.readResultSetHeaderPacket()
+	if err == nil {
+		rows := new(textRows)
+		rows.mc = mc
+
+		if resLen == 0 {
+			rows.rs.done = true
+
+			switch err := rows.NextResultSet(); err {
+			case nil, io.EOF:
+				return rows, nil
+			default:
+				return nil, err
+			}
+		}
+		// Columns
+		rows.rs.columns, err = mc.readColumns(resLen)
+		return rows, err
 	}
 	return nil, err
 }
@@ -368,22 +381,32 @@ func (mc *mysqlConn) getSystemVar(name string) ([]byte, error) {
 
 	// Read Result
 	resLen, err := mc.readResultSetHeaderPacket()
-	if err == nil {
-		rows := new(textRows)
-		rows.mc = mc
-		rows.rs.columns = []mysqlField{{fieldType: fieldTypeVarChar}}
+	if err != nil {
+		if err == errBadConnNoWrite {
+			return nil, ErrInvalidConn
+		}
+		return nil, err
+	}
+	rows := new(textRows)
+	rows.mc = mc
+	rows.rs.columns = []mysqlField{{fieldType: fieldTypeVarChar}}
 
-		if resLen > 0 {
-			// Columns
-			if err := mc.readUntilEOF(); err != nil {
-				return nil, err
+	if resLen > 0 {
+		// Columns
+		if err := mc.readUntilEOF(); err != nil {
+			if err == errBadConnNoWrite {
+				return nil, ErrInvalidConn
 			}
+			return nil, err
 		}
+	}
 
-		dest := make([]driver.Value, resLen)
-		if err = rows.readRow(dest); err == nil {
-			return dest[0].([]byte), mc.readUntilEOF()
-		}
+	dest := make([]driver.Value, resLen)
+	if err = rows.readRow(dest); err == nil {
+		return dest[0].([]byte), mc.readUntilEOF()
+	}
+	if err == errBadConnNoWrite {
+		return nil, ErrInvalidConn
 	}
 	return nil, err
 }
