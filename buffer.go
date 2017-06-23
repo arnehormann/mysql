@@ -27,6 +27,7 @@ type buffer struct {
 	idx     int
 	length  int
 	timeout time.Duration
+	frames
 }
 
 func newBuffer(nc net.Conn) buffer {
@@ -92,6 +93,7 @@ func (b *buffer) fill(need int) error {
 // returns next N bytes from buffer.
 // The returned slice is only guaranteed to be valid until the next read
 func (b *buffer) readNext(need int) ([]byte, error) {
+	b.aquire()
 	if b.length < need {
 		// refill
 		if err := b.fill(need); err != nil {
@@ -111,9 +113,11 @@ func (b *buffer) readNext(need int) ([]byte, error) {
 // Only one buffer (total) can be used at a time.
 func (b *buffer) takeBuffer(length int) []byte {
 	if b.length > 0 {
+		b.collision()
 		return nil
 	}
 
+	b.aquire()
 	// test (cheap) general case first
 	if length <= defaultBufSize || length <= cap(b.buf) {
 		return b.buf[:length]
@@ -131,8 +135,10 @@ func (b *buffer) takeBuffer(length int) []byte {
 // Only one buffer (total) can be used at a time.
 func (b *buffer) takeSmallBuffer(length int) []byte {
 	if b.length == 0 {
+		b.aquire()
 		return b.buf[:length]
 	}
+	b.collision()
 	return nil
 }
 
@@ -141,7 +147,9 @@ func (b *buffer) takeSmallBuffer(length int) []byte {
 // Only one buffer (total) can be used at a time.
 func (b *buffer) takeCompleteBuffer() []byte {
 	if b.length == 0 {
+		b.aquire()
 		return b.buf
 	}
+	b.collision()
 	return nil
 }

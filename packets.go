@@ -273,7 +273,6 @@ func (mc *mysqlConn) writeAuthPacket(cipher []byte) error {
 	data := mc.buf.takeSmallBuffer(pktLen + 4)
 	if data == nil {
 		// can not take the buffer. Something must be wrong with the connection
-		errLog.Print(ErrBusyBuffer)
 		return driver.ErrBadConn
 	}
 
@@ -359,7 +358,6 @@ func (mc *mysqlConn) writeOldAuthPacket(cipher []byte) error {
 	data := mc.buf.takeSmallBuffer(4 + pktLen)
 	if data == nil {
 		// can not take the buffer. Something must be wrong with the connection
-		errLog.Print(ErrBusyBuffer)
 		return driver.ErrBadConn
 	}
 
@@ -378,7 +376,6 @@ func (mc *mysqlConn) writeClearAuthPacket() error {
 	data := mc.buf.takeSmallBuffer(4 + pktLen)
 	if data == nil {
 		// can not take the buffer. Something must be wrong with the connection
-		errLog.Print(ErrBusyBuffer)
 		return driver.ErrBadConn
 	}
 
@@ -399,7 +396,6 @@ func (mc *mysqlConn) writeNativeAuthPacket(cipher []byte) error {
 	data := mc.buf.takeSmallBuffer(4 + pktLen)
 	if data == nil {
 		// can not take the buffer. Something must be wrong with the connection
-		errLog.Print(ErrBusyBuffer)
 		return driver.ErrBadConn
 	}
 
@@ -420,7 +416,6 @@ func (mc *mysqlConn) writeCommandPacket(command byte) error {
 	data := mc.buf.takeSmallBuffer(4 + 1)
 	if data == nil {
 		// can not take the buffer. Something must be wrong with the connection
-		errLog.Print(ErrBusyBuffer)
 		return driver.ErrBadConn
 	}
 
@@ -439,7 +434,6 @@ func (mc *mysqlConn) writeCommandPacketStr(command byte, arg string) error {
 	data := mc.buf.takeBuffer(pktLen + 4)
 	if data == nil {
 		// can not take the buffer. Something must be wrong with the connection
-		errLog.Print(ErrBusyBuffer)
 		return driver.ErrBadConn
 	}
 
@@ -460,7 +454,6 @@ func (mc *mysqlConn) writeCommandPacketUint32(command byte, arg uint32) error {
 	data := mc.buf.takeSmallBuffer(4 + 1 + 4)
 	if data == nil {
 		// can not take the buffer. Something must be wrong with the connection
-		errLog.Print(ErrBusyBuffer)
 		return driver.ErrBadConn
 	}
 
@@ -926,7 +919,6 @@ func (stmt *mysqlStmt) writeExecutePacket(args []driver.Value) error {
 	}
 	if data == nil {
 		// can not take the buffer. Something must be wrong with the connection
-		errLog.Print(ErrBusyBuffer)
 		return driver.ErrBadConn
 	}
 
